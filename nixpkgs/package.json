@@ -1,0 +1,23 @@
+{
+  "name": "userscripts",
+  "version": "1.0.0",
+  "description": "",
+  "main": "nixpkgs.js",
+  "scripts": {
+    "test": "vitest run --exclude '**/*.live.test.js'",
+    "test:watch": "vitest --exclude '**/*.live.test.js'",
+    "test:coverage": "vitest run --coverage --exclude '**/*.live.test.js'",
+    "test:live": "LIVE_TEST_MODE=all vitest run nixpkgs.live.test.js",
+    "test:live:open": "LIVE_TEST_MODE=open vitest run nixpkgs.live.test.js",
+    "test:live:merged": "LIVE_TEST_MODE=merged vitest run nixpkgs.live.test.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "eslint": "9.39.1",
+    "globals": "16.5.0",
+    "jsdom": "^27.4.0",
+    "vitest": "^4.0.18"
+  }
+}
