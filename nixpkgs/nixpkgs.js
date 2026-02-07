@@ -21,6 +21,7 @@
  * 1. Displays the merge commit hash in the PR header for easy reference.
  * 2. For merged PRs, tracks whether the commit has propagated to important branches:
  *    - master: Main development branch where PRs are merged first.
+ *    - staging: Staging branch where large-rebuild PRs are merged.
  *    - staging-next: Staging area for large rebuilds before merging to master.
  *    - nixpkgs-unstable: Continuously updated from master after CI passes (for general packages).
  *    - nixos-unstable: Like nixpkgs-unstable but includes NixOS tests.
@@ -38,7 +39,7 @@
    * The script will only perform branch tracking for repositories listed here.
    * For each repository, specify an array of branch names to monitor for merge commit propagation.
    *
-   * Example: The configuration below tracks five branches in the NixOS/nixpkgs repository.
+   * Example: The configuration below tracks six branches in the NixOS/nixpkgs repository.
    * Branch tracking only activates on merged PRs from github.com/NixOS/nixpkgs/pull/*
    */
   const subscribedRepos = {
@@ -47,6 +48,7 @@
       'nixos-unstable-small',// Fast-track channel for small, critical updates.
       'nixos-unstable',      // Includes NixOS system tests.
       'nixpkgs-unstable',    // General package updates from master.
+      'staging',             // Staging branch for large-rebuild PRs before staging-next.
       'staging-next',        // Staging area for large rebuilds.
     ],
   }
@@ -139,6 +141,44 @@
   }
 
   /**
+   * Finds the PR header element where merge commit and branch status info should be injected.
+   *
+   * Supports both the current GitHub React-based DOM structure (2025+) and the
+   * legacy DOM structure as a fallback:
+   *
+   * Current structure (2025+):
+   *   The PR summary is inside a <span> with a CSS Modules class matching
+   *   "PullRequestHeaderSummary-module__summaryContainer__*", nested in a
+   *   <div class="f6 text-normal">. A new <div> is created and appended to
+   *   this parent div for our custom content.
+   *
+   * Legacy structure:
+   *   The PR summary was inside <div class="gh-header-meta">, and content was
+   *   appended to its last child div.
+   *
+   * @returns {HTMLElement|null} The element to append content to, or null if not found.
+   */
+  const findPRInfoElement = () => {
+    // Try current GitHub DOM structure (2025+).
+    const summaryContainer = document.querySelector(
+      '[class*="PullRequestHeaderSummary-module__summaryContainer"]'
+    )
+
+    if (summaryContainer) {
+      // Create a dedicated container for our injected content,
+      // appended after the summary span inside the "f6 text-normal" div.
+      const container = document.createElement('div')
+      container.style.marginTop = '4px'
+      const parentDiv = summaryContainer.parentElement
+      parentDiv.appendChild(container)
+      return container
+    }
+
+    // Fallback to legacy GitHub DOM structure.
+    return document.querySelector('.gh-header-meta div:last-child')
+  }
+
+  /**
    * Processes the GitHub API response for the pull request.
    *
    * This function performs two main tasks:
@@ -160,8 +200,11 @@
     const commitShort = commitHash.slice(0, 7)
     const commitLink = `https://github.com/${prRepo}/commit/${commitHash}`
 
-    const prInfoSelector = '.gh-header-meta div:last-child'
-    const prInfoLine = document.querySelector(prInfoSelector)
+    const prInfoLine = findPRInfoElement()
+    if (!prInfoLine) {
+      console.log('Nixpkgs PR Branch Tracker: Could not find PR header element to inject content.')
+      return
+    }
     prInfoLine.innerHTML +=
       `&ensp;🔏&ensp;<a href="${commitLink}"><code class="Link--primary text-bold">${commitShort}</code></a><br/>`
 
@@ -173,7 +216,19 @@
     const compareLink = `https://github.com/${prRepo}/compare`
     const compareApi = `https://api.github.com/repos/${prRepo}/compare/${commitHash}`
 
-    const subscribedBranches = subscribedRepos[prRepo]
+    const allBranches = subscribedRepos[prRepo]
+
+    // Filter branches based on the PR's base (target) branch.
+    // For example, PRs targeting 'master' don't need to show 'staging' and 'staging-next'
+    // since master PRs don't flow through the staging pipeline.
+    const baseBranch = json.base && json.base.ref
+    const subscribedBranches = baseBranch
+      ? allBranches.filter(b => {
+          if (baseBranch === 'master') return b !== 'staging' && b !== 'staging-next'
+          if (baseBranch === 'staging-next') return b !== 'staging'
+          return true // staging and other bases: show all
+        })
+      : allBranches
 
     // Create branch objects with metadata for tracking and UI updates.
     const branches = subscribedBranches.map(branchName => {

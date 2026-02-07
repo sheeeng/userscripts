@@ -203,6 +203,7 @@ export const mockBranchComparisons = {
  *
  * Based on the CLI output from nixpkgs-branch-tracker-cli.md:
  * - master:              ✅ commit present (ahead)
+ * - staging:             ✅ commit present (ahead)
  * - staging-next:        ✅ commit present (ahead)
  * - nixos-unstable-small: ⚠️ not yet propagated (behind)
  * - nixos-unstable:       ⚠️ not yet propagated (behind)
@@ -225,6 +226,23 @@ export const mockPR484788BranchStatus = {
         ahead_by: 247,
         behind_by: 0,
         total_commits: 247,
+        commits: [],
+        files: [],
+      },
+    },
+
+    staging: {
+      name: 'staging',
+      status: 'ahead',
+      isPresent: true,
+      description: 'Staging branch for large-rebuild PRs before staging-next',
+      compareUrl: 'https://api.github.com/repos/NixOS/nixpkgs/compare/3f96296da66f5ecf3d8106c61281b823949a56c0...staging',
+      response: {
+        url: 'https://api.github.com/repos/NixOS/nixpkgs/compare/3f96296da66f5ecf3d8106c61281b823949a56c0...staging',
+        status: 'ahead',
+        ahead_by: 512,
+        behind_by: 0,
+        total_commits: 512,
         commits: [],
         files: [],
       },
@@ -303,7 +321,7 @@ export const mockPR484788BranchStatus = {
    * Summary of branch propagation status.
    */
   summary: {
-    present: ['master', 'staging-next'],
+    present: ['master', 'staging', 'staging-next'],
     notPresent: ['nixos-unstable-small', 'nixos-unstable', 'nixpkgs-unstable'],
   },
 }
@@ -338,6 +356,7 @@ export const mockPR484788Derived = {
     'nixos-unstable': 'https://github.com/NixOS/nixpkgs/compare/3f96296da66f5ecf3d8106c61281b823949a56c0...nixos-unstable',
     'nixpkgs-unstable': 'https://github.com/NixOS/nixpkgs/compare/3f96296da66f5ecf3d8106c61281b823949a56c0...nixpkgs-unstable',
     'nixos-unstable-small': 'https://github.com/NixOS/nixpkgs/compare/3f96296da66f5ecf3d8106c61281b823949a56c0...nixos-unstable-small',
+    staging: 'https://github.com/NixOS/nixpkgs/compare/3f96296da66f5ecf3d8106c61281b823949a56c0...staging',
     'staging-next': 'https://github.com/NixOS/nixpkgs/compare/3f96296da66f5ecf3d8106c61281b823949a56c0...staging-next',
   },
 }
@@ -509,10 +528,100 @@ export const mockMergedPR484965Derived = {
 }
 
 /**
+ * Mock stub: Merged PR targeting staging branch.
+ * Represents a large-rebuild PR that targets the staging branch instead of master.
+ * Used to test smart branch filtering based on base.ref.
+ */
+export const mockStagingPR = {
+  url: 'https://api.github.com/repos/NixOS/nixpkgs/pulls/480465',
+  id: 3200000000,
+  number: 480465,
+  state: 'closed',
+  locked: false,
+  title: 'example-staging-pr: large rebuild update',
+  user: {
+    login: 'test-user',
+    id: 12345678,
+    type: 'User',
+  },
+  created_at: '2026-01-20T12:00:00Z',
+  updated_at: '2026-01-21T12:00:00Z',
+  closed_at: '2026-01-21T12:00:00Z',
+  merged_at: '2026-01-21T12:00:00Z',
+  merge_commit_sha: 'aaa111bbb222ccc333ddd444eee555fff666777a',
+  merged: true,
+  mergeable: null,
+  mergeable_state: 'unknown',
+  base: {
+    label: 'NixOS:staging',
+    ref: 'staging',
+    sha: 'def000abc111',
+    repo: {
+      name: 'nixpkgs',
+      full_name: 'NixOS/nixpkgs',
+    },
+  },
+  head: {
+    label: 'test-user:staging-update',
+    ref: 'staging-update',
+    sha: 'fff999eee888',
+    repo: {
+      name: 'nixpkgs',
+      full_name: 'test-user/nixpkgs',
+    },
+  },
+}
+
+/**
+ * Mock stub: Merged PR targeting staging-next branch.
+ * Used to test smart branch filtering based on base.ref.
+ */
+export const mockStagingNextPR = {
+  url: 'https://api.github.com/repos/NixOS/nixpkgs/pulls/480466',
+  id: 3200000001,
+  number: 480466,
+  state: 'closed',
+  locked: false,
+  title: 'example-staging-next-pr: rebuild update',
+  user: {
+    login: 'test-user',
+    id: 12345678,
+    type: 'User',
+  },
+  created_at: '2026-01-20T12:00:00Z',
+  updated_at: '2026-01-21T12:00:00Z',
+  closed_at: '2026-01-21T12:00:00Z',
+  merged_at: '2026-01-21T12:00:00Z',
+  merge_commit_sha: 'bbb222ccc333ddd444eee555fff666777aaa888b',
+  merged: true,
+  mergeable: null,
+  mergeable_state: 'unknown',
+  base: {
+    label: 'NixOS:staging-next',
+    ref: 'staging-next',
+    sha: 'abc000def111',
+    repo: {
+      name: 'nixpkgs',
+      full_name: 'NixOS/nixpkgs',
+    },
+  },
+  head: {
+    label: 'test-user:staging-next-update',
+    ref: 'staging-next-update',
+    sha: 'eee888ddd777',
+    repo: {
+      name: 'nixpkgs',
+      full_name: 'test-user/nixpkgs',
+    },
+  },
+}
+
+/**
  * Branch status for live merged PR #484965 as of January 29, 2026.
  *
  * Status checked at approximately 10:00 UTC:
  * - master:              ✅ commit present (ahead)
+ * - staging:             ✅ commit present (ahead)
  * - staging-next:        ⚠️ diverged
  * - nixos-unstable-small: ⚠️ not yet propagated (behind)
  * - nixos-unstable:       ⚠️ not yet propagated (behind)
@@ -525,6 +634,15 @@ export const mockMergedPR484965BranchStatus = {
   branches: {
     master: {
       name: 'master',
+      status: 'ahead',
+      isPresent: true,
+      response: {
+        status: 'ahead',
+      },
+    },
+
+    staging: {
+      name: 'staging',
       status: 'ahead',
       isPresent: true,
       response: {
@@ -570,7 +688,7 @@ export const mockMergedPR484965BranchStatus = {
   },
 
   summary: {
-    present: ['master'],
+    present: ['master', 'staging'],
     notPresent: ['staging-next', 'nixos-unstable-small', 'nixos-unstable', 'nixpkgs-unstable'],
   },
 }

@@ -14,6 +14,7 @@ export const subscribedRepos = {
     'nixos-unstable-small',
     'nixos-unstable',
     'nixpkgs-unstable',
+    'staging',
     'staging-next',
   ],
 }
@@ -172,6 +173,50 @@ export const getSubscribedBranches = (repo, repos = subscribedRepos) => {
 }
 
 /**
+ * Filters the list of branches to only those relevant for the PR's base (target) branch.
+ *
+ * The nixpkgs branching model determines which branches a commit will propagate through:
+ *
+ * - PRs targeting `master`: Propagate master → channel branches only.
+ *   Staging and staging-next are irrelevant since master PRs don't flow through them.
+ *
+ * - PRs targeting `staging`: Propagate staging → staging-next → master → channels.
+ *   All branches are relevant since the commit must traverse the full pipeline.
+ *
+ * - PRs targeting `staging-next`: Propagate staging-next → master → channels.
+ *   The `staging` branch is irrelevant since the commit enters at staging-next.
+ *
+ * - Unknown base branch: Returns all branches as a safe default.
+ *
+ * @param {string} baseBranch - The PR's base (target) branch name (e.g., 'master', 'staging').
+ * @param {string[]} allBranches - The full list of subscribed branch names.
+ * @returns {string[]} The filtered list of relevant branch names.
+ */
+export const getRelevantBranches = (baseBranch, allBranches) => {
+  if (!baseBranch || !allBranches || allBranches.length === 0) {
+    return allBranches || []
+  }
+
+  switch (baseBranch) {
+    case 'master':
+      // master PRs: hide staging and staging-next (commit doesn't flow through them)
+      return allBranches.filter(b => b !== 'staging' && b !== 'staging-next')
+
+    case 'staging-next':
+      // staging-next PRs: hide staging (commit enters at staging-next, not staging)
+      return allBranches.filter(b => b !== 'staging')
+
+    case 'staging':
+      // staging PRs: show all branches (full pipeline)
+      return allBranches
+
+    default:
+      // Unknown base branch: show all branches as safe default
+      return allBranches
+  }
+}
+
+/**
  * Checks if a PR response indicates the PR has been merged.
  *
  * Important: GitHub provides a merge_commit_sha even for unmerged PRs,
@@ -200,3 +245,20 @@ export const shouldShowMergeCommit = (prResponse) => {
 
 // Storage key for the GitHub token.
 export const GITHUB_TOKEN_STORAGE_KEY = 'github_api_token'
+
+/**
+ * CSS selector for the current GitHub React-based PR header summary container (2025+).
+ *
+ * GitHub uses CSS Modules with hashed class names, so we match by the stable prefix
+ * "PullRequestHeaderSummary-module__summaryContainer" using an attribute substring selector.
+ *
+ * @type {string}
+ */
+export const PR_SUMMARY_SELECTOR = '[class*="PullRequestHeaderSummary-module__summaryContainer"]'
+
+/**
+ * CSS selector for the legacy GitHub PR header metadata area.
+ *
+ * @type {string}
+ */
+export const PR_LEGACY_SELECTOR = '.gh-header-meta div:last-child'

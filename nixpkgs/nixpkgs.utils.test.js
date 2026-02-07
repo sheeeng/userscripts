@@ -13,9 +13,12 @@ import {
   getBranchStatusApiUrl,
   isSubscribedRepo,
   getSubscribedBranches,
+  getRelevantBranches,
   isPRMerged,
   shouldShowMergeCommit,
   GITHUB_TOKEN_STORAGE_KEY,
+  PR_SUMMARY_SELECTOR,
+  PR_LEGACY_SELECTOR,
 } from './nixpkgs.utils.js'
 import {
   mockPR484788,
@@ -29,6 +32,8 @@ import {
   mockMergedPR484965,
   mockMergedPR484965Derived,
   mockMergedPR484965BranchStatus,
+  mockStagingPR,
+  mockStagingNextPR,
 } from './nixpkgs.mocks.js'
 
 describe('subscribedRepos', () => {
@@ -42,6 +47,7 @@ describe('subscribedRepos', () => {
     expect(branches).toContain('nixos-unstable')
     expect(branches).toContain('nixpkgs-unstable')
     expect(branches).toContain('nixos-unstable-small')
+    expect(branches).toContain('staging')
     expect(branches).toContain('staging-next')
   })
 })
@@ -264,9 +270,177 @@ describe('getSubscribedBranches', () => {
   })
 })
 
+describe('getRelevantBranches', () => {
+  const allBranches = [
+    'master',
+    'nixos-unstable-small',
+    'nixos-unstable',
+    'nixpkgs-unstable',
+    'staging',
+    'staging-next',
+  ]
+
+  describe('master PRs', () => {
+    it('should hide staging and staging-next for master-targeted PRs', () => {
+      const result = getRelevantBranches('master', allBranches)
+      expect(result).toContain('master')
+      expect(result).toContain('nixos-unstable-small')
+      expect(result).toContain('nixos-unstable')
+      expect(result).toContain('nixpkgs-unstable')
+      expect(result).not.toContain('staging')
+      expect(result).not.toContain('staging-next')
+    })
+
+    it('should return 4 branches for master PRs', () => {
+      const result = getRelevantBranches('master', allBranches)
+      expect(result).toHaveLength(4)
+    })
+  })
+
+  describe('staging PRs', () => {
+    it('should show all 6 branches for staging-targeted PRs', () => {
+      const result = getRelevantBranches('staging', allBranches)
+      expect(result).toHaveLength(6)
+      expect(result).toContain('staging')
+      expect(result).toContain('staging-next')
+      expect(result).toContain('master')
+      expect(result).toContain('nixos-unstable-small')
+      expect(result).toContain('nixos-unstable')
+      expect(result).toContain('nixpkgs-unstable')
+    })
+
+    it('should return the same array reference for staging PRs', () => {
+      const result = getRelevantBranches('staging', allBranches)
+      expect(result).toBe(allBranches)
+    })
+  })
+
+  describe('staging-next PRs', () => {
+    it('should hide staging but show staging-next for staging-next-targeted PRs', () => {
+      const result = getRelevantBranches('staging-next', allBranches)
+      expect(result).toContain('staging-next')
+      expect(result).toContain('master')
+      expect(result).toContain('nixos-unstable-small')
+      expect(result).toContain('nixos-unstable')
+      expect(result).toContain('nixpkgs-unstable')
+      expect(result).not.toContain('staging')
+    })
+
+    it('should return 5 branches for staging-next PRs', () => {
+      const result = getRelevantBranches('staging-next', allBranches)
+      expect(result).toHaveLength(5)
+    })
+  })
+
+  describe('unknown base branch', () => {
+    it('should show all branches for unknown base branch', () => {
+      const result = getRelevantBranches('release-24.11', allBranches)
+      expect(result).toHaveLength(6)
+    })
+  })
+
+  describe('edge cases', () => {
+    it('should handle null baseBranch', () => {
+      const result = getRelevantBranches(null, allBranches)
+      expect(result).toEqual(allBranches)
+    })
+
+    it('should handle undefined baseBranch', () => {
+      const result = getRelevantBranches(undefined, allBranches)
+      expect(result).toEqual(allBranches)
+    })
+
+    it('should handle empty string baseBranch', () => {
+      const result = getRelevantBranches('', allBranches)
+      expect(result).toEqual(allBranches)
+    })
+
+    it('should handle null allBranches', () => {
+      const result = getRelevantBranches('master', null)
+      expect(result).toEqual([])
+    })
+
+    it('should handle empty allBranches', () => {
+      const result = getRelevantBranches('master', [])
+      expect(result).toEqual([])
+    })
+  })
+
+  describe('with real subscribedRepos data', () => {
+    it('should filter NixOS/nixpkgs branches for a master PR', () => {
+      const branches = getSubscribedBranches('NixOS/nixpkgs')
+      const result = getRelevantBranches('master', branches)
+      expect(result).not.toContain('staging')
+      expect(result).not.toContain('staging-next')
+      expect(result).toContain('master')
+    })
+
+    it('should keep all NixOS/nixpkgs branches for a staging PR', () => {
+      const branches = getSubscribedBranches('NixOS/nixpkgs')
+      const result = getRelevantBranches('staging', branches)
+      expect(result).toEqual(branches)
+    })
+  })
+})
+
 describe('GITHUB_TOKEN_STORAGE_KEY', () => {
   it('should be defined as expected', () => {
     expect(GITHUB_TOKEN_STORAGE_KEY).toBe('github_api_token')
+  })
+})
+
+describe('PR_SUMMARY_SELECTOR', () => {
+  it('should be defined for the current GitHub DOM structure', () => {
+    expect(PR_SUMMARY_SELECTOR).toBe('[class*="PullRequestHeaderSummary-module__summaryContainer"]')
+  })
+
+  it('should match elements with the PullRequestHeaderSummary CSS Modules class', () => {
+    // Simulate the current GitHub PR header DOM structure.
+    document.body.innerHTML = `
+      <div class="f6 text-normal">
+        <span class="fgColor-muted d-flex flex-items-center overflow-hidden PullRequestHeaderSummary-module__summaryContainer__it2THio">
+          merged 1 commit into master
+        </span>
+      </div>
+    `
+    const el = document.querySelector(PR_SUMMARY_SELECTOR)
+    expect(el).not.toBeNull()
+    expect(el.tagName).toBe('SPAN')
+  })
+
+  it('should match even if the CSS Modules hash changes', () => {
+    // The hash suffix can change with redeployments.
+    document.body.innerHTML = `
+      <span class="PullRequestHeaderSummary-module__summaryContainer__xyz123">summary</span>
+    `
+    const el = document.querySelector(PR_SUMMARY_SELECTOR)
+    expect(el).not.toBeNull()
+  })
+
+  it('should not match unrelated elements', () => {
+    document.body.innerHTML = `
+      <span class="some-other-class">summary</span>
+    `
+    const el = document.querySelector(PR_SUMMARY_SELECTOR)
+    expect(el).toBeNull()
+  })
+})
+
+describe('PR_LEGACY_SELECTOR', () => {
+  it('should be defined for the legacy GitHub DOM structure', () => {
+    expect(PR_LEGACY_SELECTOR).toBe('.gh-header-meta div:last-child')
+  })
+
+  it('should match the legacy GitHub PR header structure', () => {
+    document.body.innerHTML = `
+      <div class="gh-header-meta">
+        <div>first child</div>
+        <div>last child - PR info</div>
+      </div>
+    `
+    const el = document.querySelector(PR_LEGACY_SELECTOR)
+    expect(el).not.toBeNull()
+    expect(el.textContent).toBe('last child - PR info')
   })
 })
 
@@ -390,6 +564,7 @@ describe('integration tests with PR #484788 mock data', () => {
       expect(branches).toContain('nixos-unstable')
       expect(branches).toContain('nixpkgs-unstable')
       expect(branches).toContain('nixos-unstable-small')
+      expect(branches).toContain('staging')
       expect(branches).toContain('staging-next')
     })
   })
@@ -419,10 +594,11 @@ describe('integration tests with PR #484788 mock data', () => {
       const branches = getSubscribedBranches(mockPR484788Derived.repoPath)
       const metadata = createBranchMetadata(branches)
 
-      expect(metadata).toHaveLength(5)
+      expect(metadata).toHaveLength(6)
       expect(metadata).toContainEqual({ name: 'master', id: 'compare-master' })
       expect(metadata).toContainEqual({ name: 'nixos-unstable', id: 'compare-nixos-unstable' })
       expect(metadata).toContainEqual({ name: 'nixos-unstable-small', id: 'compare-nixos-unstable-small' })
+      expect(metadata).toContainEqual({ name: 'staging', id: 'compare-staging' })
     })
   })
 
@@ -466,6 +642,7 @@ describe('integration tests with PR #484788 mock data', () => {
  *
  * Based on the CLI output from nixpkgs-branch-tracker-cli.md:
  * - master:              commit present (ahead)
+ * - staging:             commit present (ahead)
  * - staging-next:        commit present (ahead)
  * - nixos-unstable-small: not yet propagated (behind)
  * - nixos-unstable:       not yet propagated (behind)
@@ -480,6 +657,7 @@ describe('PR #484788 branch propagation status (January 28, 2026)', () => {
     it('should have status for all tracked branches', () => {
       const branchNames = Object.keys(mockPR484788BranchStatus.branches)
       expect(branchNames).toContain('master')
+      expect(branchNames).toContain('staging')
       expect(branchNames).toContain('staging-next')
       expect(branchNames).toContain('nixos-unstable-small')
       expect(branchNames).toContain('nixos-unstable')
@@ -487,7 +665,7 @@ describe('PR #484788 branch propagation status (January 28, 2026)', () => {
     })
 
     it('should have correct summary of present branches', () => {
-      expect(mockPR484788BranchStatus.summary.present).toEqual(['master', 'staging-next'])
+      expect(mockPR484788BranchStatus.summary.present).toEqual(['master', 'staging', 'staging-next'])
     })
 
     it('should have correct summary of not-present branches', () => {
@@ -540,6 +718,7 @@ describe('PR #484788 branch propagation status (January 28, 2026)', () => {
 
       // Verify branches where commit is present
       expect(results.master).toBe(true)
+      expect(results.staging).toBe(true)
       expect(results['staging-next']).toBe(true)
 
       // Verify branches where commit is not present
@@ -569,8 +748,9 @@ describe('PR #484788 branch propagation status (January 28, 2026)', () => {
     it('should return responses for all branches', () => {
       const responses = getMockBranchResponses()
 
-      expect(Object.keys(responses)).toHaveLength(5)
+      expect(Object.keys(responses)).toHaveLength(6)
       expect(responses.master).toBeDefined()
+      expect(responses.staging).toBeDefined()
       expect(responses['staging-next']).toBeDefined()
       expect(responses['nixos-unstable-small']).toBeDefined()
       expect(responses['nixos-unstable']).toBeDefined()
@@ -757,6 +937,11 @@ describe('mock test: merged PR #484965 (opencode update)', () => {
       expect(isCommitInBranch(status)).toBe(true)
     })
 
+    it('should show commit is in staging', () => {
+      const status = mockMergedPR484965BranchStatus.branches.staging.response.status
+      expect(isCommitInBranch(status)).toBe(true)
+    })
+
     it('should show commit is NOT in nixos-unstable', () => {
       const status = mockMergedPR484965BranchStatus.branches['nixos-unstable'].response.status
       expect(isCommitInBranch(status)).toBe(false)
@@ -774,7 +959,7 @@ describe('mock test: merged PR #484965 (opencode update)', () => {
     })
 
     it('should have correct summary of present branches', () => {
-      expect(mockMergedPR484965BranchStatus.summary.present).toEqual(['master'])
+      expect(mockMergedPR484965BranchStatus.summary.present).toEqual(['master', 'staging'])
     })
 
     it('should have correct summary of not-present branches', () => {
@@ -812,5 +997,113 @@ describe('comparison: open vs merged PR behavior', () => {
   it('should confirm both are NixOS/nixpkgs PRs', () => {
     expect(isSubscribedRepo(mockOpenPR485005Derived.repoPath)).toBe(true)
     expect(isSubscribedRepo(mockMergedPR484965Derived.repoPath)).toBe(true)
+  })
+})
+
+/**
+ * Tests for smart branch filtering based on PR base.ref.
+ *
+ * The script should only show branches relevant to the PR's target branch:
+ * - master PRs: hide staging and staging-next
+ * - staging PRs: show all branches
+ * - staging-next PRs: hide staging
+ */
+describe('smart branch filtering with mock PRs', () => {
+  const allBranches = subscribedRepos['NixOS/nixpkgs']
+
+  describe('master-targeted PRs (PR #484788, PR #484965)', () => {
+    it('PR #484788 targets master', () => {
+      expect(mockPR484788.base.ref).toBe('master')
+    })
+
+    it('PR #484965 targets master', () => {
+      expect(mockMergedPR484965.base.ref).toBe('master')
+    })
+
+    it('should filter out staging and staging-next for PR #484788', () => {
+      const relevant = getRelevantBranches(mockPR484788.base.ref, allBranches)
+      expect(relevant).not.toContain('staging')
+      expect(relevant).not.toContain('staging-next')
+      expect(relevant).toHaveLength(4)
+    })
+
+    it('should filter out staging and staging-next for PR #484965', () => {
+      const relevant = getRelevantBranches(mockMergedPR484965.base.ref, allBranches)
+      expect(relevant).not.toContain('staging')
+      expect(relevant).not.toContain('staging-next')
+      expect(relevant).toHaveLength(4)
+    })
+  })
+
+  describe('staging-targeted PR (mockStagingPR)', () => {
+    it('mock staging PR targets staging', () => {
+      expect(mockStagingPR.base.ref).toBe('staging')
+    })
+
+    it('should show all 6 branches for staging PR', () => {
+      const relevant = getRelevantBranches(mockStagingPR.base.ref, allBranches)
+      expect(relevant).toHaveLength(6)
+      expect(relevant).toContain('staging')
+      expect(relevant).toContain('staging-next')
+      expect(relevant).toContain('master')
+    })
+
+    it('staging PR should be merged', () => {
+      expect(isPRMerged(mockStagingPR)).toBe(true)
+    })
+  })
+
+  describe('staging-next-targeted PR (mockStagingNextPR)', () => {
+    it('mock staging-next PR targets staging-next', () => {
+      expect(mockStagingNextPR.base.ref).toBe('staging-next')
+    })
+
+    it('should hide staging but show staging-next for staging-next PR', () => {
+      const relevant = getRelevantBranches(mockStagingNextPR.base.ref, allBranches)
+      expect(relevant).not.toContain('staging')
+      expect(relevant).toContain('staging-next')
+      expect(relevant).toContain('master')
+      expect(relevant).toHaveLength(5)
+    })
+
+    it('staging-next PR should be merged', () => {
+      expect(isPRMerged(mockStagingNextPR)).toBe(true)
+    })
+  })
+
+  describe('open PR #485005 targets master', () => {
+    it('should target master', () => {
+      expect(mockOpenPR485005.base.ref).toBe('master')
+    })
+
+    it('should filter out staging and staging-next', () => {
+      const relevant = getRelevantBranches(mockOpenPR485005.base.ref, allBranches)
+      expect(relevant).not.toContain('staging')
+      expect(relevant).not.toContain('staging-next')
+    })
+  })
+
+  describe('createBranchMetadata with filtered branches', () => {
+    it('should create metadata only for relevant master PR branches', () => {
+      const relevant = getRelevantBranches('master', allBranches)
+      const metadata = createBranchMetadata(relevant)
+      expect(metadata).toHaveLength(4)
+      expect(metadata.map(m => m.name)).not.toContain('staging')
+      expect(metadata.map(m => m.name)).not.toContain('staging-next')
+    })
+
+    it('should create metadata for all branches for staging PR', () => {
+      const relevant = getRelevantBranches('staging', allBranches)
+      const metadata = createBranchMetadata(relevant)
+      expect(metadata).toHaveLength(6)
+    })
+
+    it('should create metadata for 5 branches for staging-next PR', () => {
+      const relevant = getRelevantBranches('staging-next', allBranches)
+      const metadata = createBranchMetadata(relevant)
+      expect(metadata).toHaveLength(5)
+      expect(metadata.map(m => m.name)).not.toContain('staging')
+      expect(metadata.map(m => m.name)).toContain('staging-next')
+    })
   })
 })
